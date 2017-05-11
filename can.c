@@ -24,10 +24,12 @@
 #include <sys/ioctl.h>
 #include <net/if.h>
 #include <unistd.h>
+#include <stdbool.h>
 
 struct can_hdl {
 	int fd;
 	int ifindex;
+	bool fd_mode;
 };
 
 static int can_socket_cfg(struct can_hdl *hdl, struct can_cfg *cfg)
@@ -84,6 +86,7 @@ static int can_socket_cfg(struct can_hdl *hdl, struct can_cfg *cfg)
 			ret = -5;
 			goto out;
 		}
+		hdl->fd_mode = true;
 	}
 
 	addr.can_family  = AF_CAN;
@@ -156,13 +159,19 @@ ssize_t can_read(struct can_hdl *hdl, struct canfd_frame *frame)
 ssize_t can_write(struct can_hdl *hdl, const struct canfd_frame *frame)
 {
 	ssize_t nbytes = -1;
+	size_t snd_len;
 	struct sockaddr_can addr;
 
 	addr.can_ifindex = hdl->ifindex;
 	addr.can_family  = AF_CAN;
 
-	nbytes = sendto(hdl->fd, frame, sizeof(struct canfd_frame),
-			MSG_DONTWAIT, (struct sockaddr *)&addr, sizeof(addr));
+	if (hdl->fd_mode)
+		snd_len = sizeof(struct canfd_frame);
+	else
+		snd_len = sizeof(struct can_frame);
+
+	nbytes = sendto(hdl->fd, frame, snd_len, MSG_DONTWAIT,
+			(struct sockaddr *)&addr, sizeof(addr));
 
 	if ((nbytes < 0) && ((errno == EAGAIN) || (errno == EWOULDBLOCK)))
 		/* Socket TX buffer is full. This could happen if the unit is
